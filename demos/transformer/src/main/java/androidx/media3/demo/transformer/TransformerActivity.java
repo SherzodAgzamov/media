@@ -30,6 +30,8 @@ import android.content.pm.PackageManager;
 import android.graphics.Bitmap;
 import android.graphics.Color;
 import android.graphics.drawable.Drawable;
+import android.media.MediaCodecInfo;
+import android.media.MediaMetadataRetriever;
 import android.net.Uri;
 import android.opengl.Matrix;
 import android.os.Bundle;
@@ -52,6 +54,7 @@ import androidx.core.app.ActivityCompat;
 import androidx.media3.common.C;
 import androidx.media3.common.DebugViewProvider;
 import androidx.media3.common.Effect;
+import androidx.media3.common.GlObjectsProvider;
 import androidx.media3.common.MediaItem;
 import androidx.media3.common.audio.AudioProcessor;
 import androidx.media3.common.audio.SonicAudioProcessor;
@@ -61,10 +64,13 @@ import androidx.media3.common.util.Log;
 import androidx.media3.datasource.DataSourceBitmapLoader;
 import androidx.media3.effect.BitmapOverlay;
 import androidx.media3.effect.Contrast;
+import androidx.media3.effect.DefaultGlObjectsProvider;
+import androidx.media3.effect.DefaultVideoFrameProcessor;
 import androidx.media3.effect.DrawableOverlay;
 import androidx.media3.effect.GlEffect;
 import androidx.media3.effect.GlShaderProgram;
 import androidx.media3.effect.HslAdjustment;
+import androidx.media3.effect.MatrixTransformation;
 import androidx.media3.effect.OverlayEffect;
 import androidx.media3.effect.OverlaySettings;
 import androidx.media3.effect.Presentation;
@@ -84,11 +90,13 @@ import androidx.media3.transformer.DefaultMuxer;
 import androidx.media3.transformer.EditedMediaItem;
 import androidx.media3.transformer.EditedMediaItemSequence;
 import androidx.media3.transformer.Effects;
+import androidx.media3.transformer.EncoderSelector;
 import androidx.media3.transformer.ExportException;
 import androidx.media3.transformer.ExportResult;
 import androidx.media3.transformer.ProgressHolder;
 import androidx.media3.transformer.TransformationRequest;
 import androidx.media3.transformer.Transformer;
+import androidx.media3.transformer.VideoEncoderSettings;
 import androidx.media3.ui.AspectRatioFrameLayout;
 import androidx.media3.ui.PlayerView;
 import com.google.android.material.card.MaterialCardView;
@@ -102,6 +110,7 @@ import java.io.IOException;
 import java.lang.reflect.Constructor;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
@@ -233,7 +242,7 @@ public final class TransformerActivity extends AppCompatActivity {
     MediaItem mediaItem = createMediaItem(bundle, inputUri);
     try {
       Transformer transformer = createTransformer(bundle, inputUri, filePath);
-      Composition composition = createComposition(mediaItem, bundle);
+      Composition composition = createComposition(mediaItem, inputUri, bundle);
       exportStopwatch.start();
       transformer.start(composition, filePath);
       this.transformer = transformer;
@@ -314,12 +323,15 @@ public final class TransformerActivity extends AppCompatActivity {
       transformerBuilder.setEncoderFactory(
           new DefaultEncoderFactory.Builder(this.getApplicationContext())
               .setEnableFallback(bundle.getBoolean(ConfigurationActivity.ENABLE_FALLBACK))
+              .setRequestedVideoEncoderSettings(new VideoEncoderSettings.Builder()
+                  .setBitrateMode(MediaCodecInfo.EncoderCapabilities.BITRATE_MODE_VBR)
+                  .setBitrate(4_000_000)
+                  .build())
               .build());
 
-      if (!bundle.getBoolean(ConfigurationActivity.ABORT_SLOW_EXPORT)) {
-        transformerBuilder.setMuxerFactory(
-            new DefaultMuxer.Factory(/* maxDelayBetweenSamplesMs= */ C.TIME_UNSET));
-      }
+//      transformerBuilder.setMuxerFactory(
+//          new FlipMuxerFactory(true)
+//      );
 
       if (bundle.getBoolean(ConfigurationActivity.ENABLE_DEBUG_PREVIEW)) {
         transformerBuilder.setDebugViewProvider(new DemoDebugViewProvider());
@@ -363,7 +375,7 @@ public final class TransformerActivity extends AppCompatActivity {
     "exportStopwatch",
     "progressViewGroup",
   })
-  private Composition createComposition(MediaItem mediaItem, @Nullable Bundle bundle)
+  private Composition createComposition(MediaItem mediaItem, Uri inputUri, @Nullable Bundle bundle)
       throws PackageManager.NameNotFoundException {
     EditedMediaItem.Builder editedMediaItemBuilder = new EditedMediaItem.Builder(mediaItem);
     // For image inputs. Automatically ignored if input is audio/video.
@@ -379,6 +391,28 @@ public final class TransformerActivity extends AppCompatActivity {
               bundle.getBoolean(ConfigurationActivity.SHOULD_FLATTEN_FOR_SLOW_MOTION))
           .setEffects(new Effects(audioProcessors, videoEffects));
       forceAudioTrack = bundle.getBoolean(ConfigurationActivity.FORCE_AUDIO_TRACK);
+    }
+    try {
+      ImmutableList.Builder<Effect> effects = new ImmutableList.Builder<>();
+      ImmutableList.Builder<AudioProcessor> processor = new ImmutableList.Builder<>();
+      MediaMetadataRetriever mediaMetadataRetriever = new MediaMetadataRetriever();
+      mediaMetadataRetriever.setDataSource(this, inputUri );
+      String height = mediaMetadataRetriever.extractMetadata(
+          MediaMetadataRetriever.METADATA_KEY_VIDEO_HEIGHT);
+      String width = mediaMetadataRetriever.extractMetadata(
+          MediaMetadataRetriever.METADATA_KEY_VIDEO_WIDTH);
+      String rotation = mediaMetadataRetriever.extractMetadata(
+          MediaMetadataRetriever.METADATA_KEY_VIDEO_ROTATION);
+
+      Log.d(TAG, "WHOOP WHOOP, width:" + width + ", height:" + height + ", rotation:" + rotation);
+
+//      if (Objects.equals(rotation, "90")) {
+//        effects.add(MatrixTransformationFactory.rotate(Integer.valueOf(rotation)));
+//      }
+
+      editedMediaItemBuilder.setEffects(new Effects(processor.build(), effects.build()));
+    } catch (Exception e){
+      e.printStackTrace();
     }
     List<EditedMediaItem> editedMediaItems = new ArrayList<>();
     editedMediaItems.add(editedMediaItemBuilder.build());
@@ -669,6 +703,14 @@ public final class TransformerActivity extends AppCompatActivity {
     displayInputButton.setVisibility(View.VISIBLE);
     playMediaItems(MediaItem.fromUri(inputUri), MediaItem.fromUri("file://" + filePath));
     Log.d(TAG, "Output file path: file://" + filePath);
+
+    MediaMetadataRetriever mediaMetadataRetriever = new MediaMetadataRetriever();
+    mediaMetadataRetriever.setDataSource(filePath);
+    String height = mediaMetadataRetriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_HEIGHT);
+    String width = mediaMetadataRetriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_WIDTH);
+    String rotation = mediaMetadataRetriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_ROTATION);
+
+    Log.d(TAG, "WHOOP WHOOP, width:" + width + ", height:" + height + ", rotation:" + rotation);
   }
 
   @RequiresNonNull({

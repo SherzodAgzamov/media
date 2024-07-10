@@ -432,12 +432,12 @@ import org.checkerframework.dataflow.qual.Pure;
       // frame before encoding, so the encoded frame's width >= height, and sets
       // rotationDegrees in the output Format to ensure the frame is displayed in the correct
       // orientation.
-      if (requestedWidth < requestedHeight) {
-        int temp = requestedWidth;
-        requestedWidth = requestedHeight;
-        requestedHeight = temp;
-        outputRotationDegrees = 90;
-      }
+//      if (requestedWidth < requestedHeight) {
+//        int temp = requestedWidth;
+//        requestedWidth = requestedHeight;
+//        requestedHeight = temp;
+//        outputRotationDegrees = 90;
+//      }
 
       Format requestedEncoderFormat =
           new Format.Builder()
