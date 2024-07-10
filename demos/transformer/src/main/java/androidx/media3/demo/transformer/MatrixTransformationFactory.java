@@ -44,6 +44,10 @@ import androidx.media3.effect.MatrixTransformation;
     return MatrixTransformationFactory::calculateDizzyCropMatrix;
   }
 
+  public static MatrixTransformation rotate(int rotationDegrees) {
+    return presentationTimeUs -> rotateMatrix(rotationDegrees);
+  }
+
   /**
    * Returns a {@link GlMatrixTransformation} that rotates a frame in 3D around the y-axis and
    * applies perspective projection to 2D.
@@ -69,6 +73,18 @@ import androidx.media3.effect.MatrixTransformation;
     android.graphics.Matrix transformationMatrix = new android.graphics.Matrix();
     transformationMatrix.postTranslate(/* dx= */ centerX, /* dy= */ centerY);
     transformationMatrix.postScale(/* sx= */ 2f, /* sy= */ 2f);
+    return transformationMatrix;
+  }
+
+  private static android.graphics.Matrix rotateMatrix(int rotationDegrees) {
+    android.graphics.Matrix transformationMatrix = new android.graphics.Matrix();
+    transformationMatrix.postRotate(rotationDegrees);
+    return transformationMatrix;
+  }
+  private static float[] rotateMatrix(Integer rotationDegrees) {
+    float[] transformationMatrix = new float[16];
+    android.opengl.Matrix.setIdentityM(transformationMatrix, 0);
+    android.opengl.Matrix.rotateM(transformationMatrix, 0, rotationDegrees, 0f, 0f, 1f);
     return transformationMatrix;
   }
 
